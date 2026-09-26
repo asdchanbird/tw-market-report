@@ -9,7 +9,7 @@ import argparse
 import logging
 import sys
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List
 
@@ -18,9 +18,11 @@ from .ai_summary import generate_summary
 from .chart import render_trend_png
 from .mailer import send_email
 from .models import DailyReport, InstitutionalFlow, MarketDay, TrendPoint
+from .news import fetch_news
 from .render import render_html, subject
 
 TAIPEI = timezone(timedelta(hours=8))
+REPORT_TIME = dtime(21, 30)  # 與 GitHub Actions 排程一致
 log = logging.getLogger("report")
 
 
@@ -32,9 +34,10 @@ def _foreign_net(flows: List[InstitutionalFlow]) -> float:
 
 
 def build_trend(s, days: List[MarketDay], today_flows: List[InstitutionalFlow],
-                foreign_oi: Dict[date, int]) -> List[TrendPoint]:
+                foreign_oi: Dict[date, int], usd_twd: Dict[date, float]) -> List[TrendPoint]:
     recent = days[-TREND_DAYS:]
-    points = [TrendPoint(x.trade_date, x.close, x.turnover_billion, foreign_oi=foreign_oi.get(x.trade_date))
+    points = [TrendPoint(x.trade_date, x.close, x.turnover_billion,
+                         foreign_oi=foreign_oi.get(x.trade_date), usd_twd=usd_twd.get(x.trade_date))
               for x in recent]
     if today_flows:
         points[-1].foreign_net_billion = _foreign_net(today_flows)
@@ -52,18 +55,31 @@ def build_report(d: date) -> DailyReport:
 
     # 其餘區塊各自獨立，某個來源失敗只在報告中註記，不影響整體寄送
     futures_rows: List[dict] = []
+    usd_twd: Dict[date, float] = {}
 
     def fetch_futures(s, d):
         futures_rows.extend(fetchers.fetch_futures_rows(s, d))
         return fetchers.parse_futures(futures_rows, d)
+
+    def fetch_fx(s, d):
+        usd_twd.update(fetchers.fetch_usd_twd(s))
+        return fetchers.parse_fx(usd_twd, d)
+
+    def fetch_recent_news(s, d):
+        # 從前一交易日的報告時間（21:30）起，到今天為止（週一會涵蓋週末新聞）
+        start = datetime.combine(days[-2].trade_date, REPORT_TIME, TAIPEI)
+        end = min(datetime.combine(d, dtime(23, 59, 59), TAIPEI), datetime.now(TAIPEI))
+        return fetch_news(s, start, end)
 
     sections = [
         ("institutional", "三大法人現貨買賣超", fetchers.fetch_institutional),
         ("futures", "台指期法人未平倉", fetch_futures),
         ("pcr", "選擇權 P/C Ratio", fetchers.fetch_pcr),
         ("margin", "融資融券", fetchers.fetch_margin),
+        ("fx", "新台幣匯率", fetch_fx),
         ("trend", "近 5 日趨勢", lambda s, d: build_trend(
-            s, days, report.institutional, fetchers.parse_foreign_oi(futures_rows))),
+            s, days, report.institutional, fetchers.parse_foreign_oi(futures_rows), usd_twd)),
+        ("news", "近期新聞", fetch_recent_news),
     ]
     for attr, label, fetch in sections:
         try:

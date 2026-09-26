@@ -41,7 +41,7 @@
 
   {% if chart_src %}
   <h2 style="{{ h2 }}">近 {{ r.trend|length }} 日趨勢</h2>
-  <img src="{{ chart_src }}" width="600" alt="近 {{ r.trend|length }} 日加權指數、成交金額、外資現貨買賣超與外資台指期未平倉淨額趨勢圖" style="display:block;width:100%;max-width:600px;height:auto;border:0">
+  <img src="{{ chart_src }}" width="600" alt="近 {{ r.trend|length }} 日加權指數、成交金額、外資籌碼與新台幣匯率趨勢圖" style="display:block;width:100%;max-width:600px;height:auto;border:0">
   {% endif %}
 
   {% if r.institutional %}
@@ -64,9 +64,15 @@
   </table>
   {% endif %}
 
-  {% if r.pcr or r.margin %}
-  <h2 style="{{ h2 }}">選擇權與信用交易</h2>
+  {% if r.fx or r.pcr or r.margin %}
+  <h2 style="{{ h2 }}">匯率、選擇權與信用交易</h2>
   <table style="width:100%;border-collapse:collapse">
+    {% if r.fx %}
+    {#- 匯率數字變大是台幣貶值；不用紅綠色，避免與股價漲跌的直覺混淆 -#}
+    <tr><td style="{{ td }}">新台幣兌美元<span style="color:#888;font-size:12px">（臺銀即期）</span></td><td style="{{ tdr }}">{{ "{:.3f}".format(r.fx.usd_twd) }}</td><td style="{{ tdr }};color:#555">
+      {%- if r.fx.change is none %}—{% elif r.fx.change > 0 %}台幣貶 {{ "{:.3f}".format(r.fx.change) }}{% elif r.fx.change < 0 %}台幣升 {{ "{:.3f}".format(-r.fx.change) }}{% else %}持平{% endif -%}
+    </td></tr>
+    {% endif %}
     {% if r.pcr %}
     <tr><td style="{{ td }}">P/C Ratio（未平倉）</td><td style="{{ tdr }}">{{ "{:.2f}".format(r.pcr.oi_ratio) }}%</td><td style="{{ tdr }}"></td></tr>
     <tr><td style="{{ td }}">P/C Ratio（成交量）</td><td style="{{ tdr }}">{{ "{:.2f}".format(r.pcr.volume_ratio) }}%</td><td style="{{ tdr }}"></td></tr>
@@ -78,6 +84,25 @@
   </table>
   {% endif %}
 
+  {% if r.news %}
+  <h2 style="{{ h2 }}">近期新聞整理</h2>
+  {% for g in r.news %}
+  <div style="font-size:13px;font-weight:600;color:#555;margin:14px 0 4px">{{ g.name }}</div>
+  <table style="width:100%;border-collapse:collapse">
+    {% for n in g.items %}
+    <tr>
+      <td style="{{ td }};width:74px;vertical-align:top;color:#888;font-size:12px;white-space:nowrap">{{ n.published.strftime('%m/%d %H:%M') }}</td>
+      <td style="{{ td }};line-height:1.5">
+        <a href="{{ n.url }}" style="color:#1c1e21;text-decoration:none">{{ n.title }}</a>
+        {% if n.tags %}<div style="font-size:12px;color:#888;margin-top:2px">{% for t in n.tags %}#{{ t }}{% if not loop.last %}　{% endif %}{% endfor %}</div>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endfor %}
+  <div style="font-size:12px;color:#999;margin-top:6px">依關鍵字自動挑選，點標題可閱讀全文（鉅亨網）。</div>
+  {% endif %}
+
   {% if r.warnings %}
   <div style="margin-top:24px;padding:12px;background:#fff8e6;border-radius:8px;font-size:13px;color:#8a6100">
     以下資料未能取得：<br>{% for w in r.warnings %}・{{ w }}<br>{% endfor %}
@@ -85,7 +110,7 @@
   {% endif %}
 
   <div style="margin-top:28px;font-size:12px;color:#999;line-height:1.6">
-    資料來源：臺灣證券交易所、臺灣期貨交易所。本報告由程式自動產生，僅供參考。
+    資料來源：臺灣證券交易所、臺灣期貨交易所、臺灣銀行牌告匯率、鉅亨網。本報告由程式自動產生，僅供參考。
   </div>
 </div>
 </div>

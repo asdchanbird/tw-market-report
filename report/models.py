@@ -1,6 +1,6 @@
 """報告用的資料結構。所有金額單位在此統一換算完成，模板只負責顯示。"""
 from dataclasses import dataclass, field, asdict
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 
@@ -20,6 +20,7 @@ class TrendPoint:
     turnover_billion: float
     foreign_net_billion: Optional[float] = None  # 外資現貨買賣超（億元）
     foreign_oi: Optional[int] = None  # 外資台指期未平倉淨額（口）
+    usd_twd: Optional[float] = None  # 新台幣兌美元（臺銀即期買賣中價）
 
 
 @dataclass
@@ -59,6 +60,26 @@ class MarginSummary:
 
 
 @dataclass
+class FxRate:
+    usd_twd: float  # 1 美元兌多少新台幣；數字變大代表台幣貶值
+    change: Optional[float]  # 較前一營業日
+
+
+@dataclass
+class NewsItem:
+    title: str
+    url: str
+    published: datetime
+    tags: List[str] = field(default_factory=list)
+
+
+@dataclass
+class NewsGroup:
+    name: str
+    items: List[NewsItem]
+
+
+@dataclass
 class DailyReport:
     trade_date: date
     market: MarketSummary
@@ -66,7 +87,9 @@ class DailyReport:
     futures: List[FuturesPosition] = field(default_factory=list)
     pcr: Optional[PutCallRatio] = None
     margin: Optional[MarginSummary] = None
+    fx: Optional[FxRate] = None
     trend: List[TrendPoint] = field(default_factory=list)
+    news: List[NewsGroup] = field(default_factory=list)
     ai_summary: Optional[str] = None
     warnings: List[str] = field(default_factory=list)  # 抓取失敗的區塊
 
@@ -75,6 +98,8 @@ class DailyReport:
         d["trade_date"] = self.trade_date.isoformat()
         for t in d["trend"]:
             t["trade_date"] = t["trade_date"].isoformat()
+        # 給 AI 摘要參考的新聞只保留標題
+        d["news"] = {g.name: [i.title for i in g.items] for g in self.news}
         d.pop("ai_summary")
         d.pop("warnings")
         return d

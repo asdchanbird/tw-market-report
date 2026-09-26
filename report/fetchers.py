@@ -7,7 +7,7 @@ import csv
 import io
 import time
 from datetime import date, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -15,6 +15,7 @@ from urllib3.util.retry import Retry
 
 from .models import (
     FuturesPosition,
+    FxRate,
     InstitutionalFlow,
     MarginSummary,
     MarketDay,
@@ -24,6 +25,7 @@ from .models import (
 
 TWSE = "https://www.twse.com.tw/rwd/zh"
 TAIFEX = "https://www.taifex.com.tw/cht/3"
+BOT_USD = "https://rate.bot.com.tw/xrt/flcsv/0/L3M/USD"  # 臺灣銀行近 3 個月美元牌告
 HUNDRED_MILLION = 100_000_000
 TWSE_DELAY = 1.5  # 證交所對短時間大量請求會暫時封鎖 IP，每次請求間隔一下
 
@@ -213,3 +215,33 @@ def parse_pcr(rows: List[dict], d: date) -> PutCallRatio:
 def fetch_pcr(s: requests.Session, d: date) -> PutCallRatio:
     rows = _taifex_csv(s, "pcRatioDown", _date_range(d))
     return parse_pcr(rows, d)
+
+
+# ---------- 臺灣銀行：新台幣兌美元 ----------
+
+def parse_usd_twd(text: str) -> Dict[date, float]:
+    """臺銀牌告 CSV -> {日期: 即期買入與即期賣出的中價}。
+
+    欄位：資料日期, 幣別, 本行買入, 現金, 即期, 遠期×7, 本行賣出, 現金, 即期, …
+    """
+    rates = {}
+    for row in csv.reader(io.StringIO(text)):
+        if len(row) < 15 or not row[0].isdigit():
+            continue
+        day = date(int(row[0][:4]), int(row[0][4:6]), int(row[0][6:8]))
+        rates[day] = round((float(row[4]) + float(row[14])) / 2, 3)
+    return rates
+
+
+def parse_fx(rates: Dict[date, float], d: date) -> FxRate:
+    if d not in rates:
+        raise NoTradingData(f"{d} 無臺銀美元牌告")
+    earlier = [x for x in rates if x < d]
+    prev = rates[max(earlier)] if earlier else None
+    return FxRate(usd_twd=rates[d], change=round(rates[d] - prev, 3) if prev is not None else None)
+
+
+def fetch_usd_twd(s: requests.Session) -> Dict[date, float]:
+    r = s.get(BOT_USD, timeout=20)
+    r.raise_for_status()
+    return parse_usd_twd(r.content.decode("utf-8-sig"))

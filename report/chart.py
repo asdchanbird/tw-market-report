@@ -1,6 +1,6 @@
 """近 5 日趨勢圖：輸出 PNG，以內嵌圖片方式放進郵件（多數郵件軟體不支援 SVG 與 JavaScript）。
 
-四個小圖上下排列，各自一個 y 軸（不同單位不共用軸），適合手機直式閱讀。
+各小圖上下排列，各自一個 y 軸（不同單位不共用軸），適合手機直式閱讀。
 """
 import io
 from typing import List, Optional
@@ -71,24 +71,26 @@ def render_trend_png(points: List[TrendPoint]) -> Optional[bytes]:
 
     labels = [f"{p.trade_date:%m/%d}" for p in points]
     xs = list(range(len(points)))
+    # (標題, 數值, 圖形, 最新值標籤格式, y 軸刻度格式)
     panels = [
-        ("加權指數", [p.close for p in points], "line", "{:,.0f}"),
-        ("成交金額（億元）", [p.turnover_billion for p in points], "bar", "{:,.0f}"),
+        ("加權指數", [p.close for p in points], "line", "{:,.0f}", "{:,.0f}"),
+        ("成交金額（億元）", [p.turnover_billion for p in points], "bar", "{:,.0f}", "{:,.0f}"),
     ]
     if all(p.foreign_net_billion is not None for p in points):
-        panels.append(("外資現貨買賣超（億元）", [p.foreign_net_billion for p in points], "signed", "{:+,.1f}"))
+        panels.append(("外資現貨買賣超（億元）", [p.foreign_net_billion for p in points], "signed", "{:+,.1f}", "{:,.0f}"))
     if all(p.foreign_oi is not None for p in points):
-        panels.append(("外資台指期未平倉淨額（口）", [p.foreign_oi for p in points], "line", "{:+,}"))
+        panels.append(("外資台指期未平倉淨額（口）", [p.foreign_oi for p in points], "line", "{:+,}", "{:,.0f}"))
+    if all(p.usd_twd is not None for p in points):
+        panels.append(("新台幣兌美元（數字越大＝台幣越弱）", [p.usd_twd for p in points], "line", "{:.3f}", "{:.2f}"))
 
     fig, axes = plt.subplots(len(panels), 1, figsize=(6, 1.95 * len(panels)), dpi=200, facecolor=SURFACE)
-    thousands = FuncFormatter(lambda v, _: f"{v:,.0f}")
-    for ax, (title, ys, kind, fmt) in zip(axes, panels):
+    for ax, (title, ys, kind, label_fmt, axis_fmt) in zip(axes, panels):
         _style(ax, title)
         if kind == "line":
-            _line(ax, xs, ys, fmt)
+            _line(ax, xs, ys, label_fmt)
         else:
-            _bars(ax, xs, ys, fmt, signed=(kind == "signed"))
-        ax.yaxis.set_major_formatter(thousands)
+            _bars(ax, xs, ys, label_fmt, signed=(kind == "signed"))
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _, f=axis_fmt: f.format(v)))
         ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(4))
         ax.set_xticks(xs)
         ax.set_xlim(-0.5, len(xs) - 0.5)  # 各小圖日期對齊
