@@ -39,6 +39,11 @@
   <div style="font-size:12px;color:#999;margin-top:6px">由 Claude 根據上方數據自動產生，僅供參考，不構成投資建議。</div>
   {% endif %}
 
+  {% if chart_src %}
+  <h2 style="{{ h2 }}">近 {{ r.trend|length }} 日趨勢</h2>
+  <img src="{{ chart_src }}" width="600" alt="近 {{ r.trend|length }} 日加權指數、成交金額、外資現貨買賣超與外資台指期未平倉淨額趨勢圖" style="display:block;width:100%;max-width:600px;height:auto;border:0">
+  {% endif %}
+
   {% if r.institutional %}
   <h2 style="{{ h2 }}">三大法人現貨買賣超</h2>
   <table style="width:100%;border-collapse:collapse">

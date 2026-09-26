@@ -11,6 +11,7 @@
 | 台指期籌碼 | 三大法人多空未平倉淨額與較前日增減 | 期交所 |
 | 選擇權 | Put/Call Ratio（成交量、未平倉） | 期交所 |
 | 信用交易 | 融資餘額、融券餘額與增減 | 證交所 MI_MARGN |
+| 近 5 日趨勢圖 | 加權指數、成交金額、外資現貨買賣超、外資台指期未平倉淨額 | 同上 |
 | AI 摘要 | 3～5 句盤勢解讀，不含買賣建議 | Claude API |
 
 ## 架構
@@ -25,6 +26,7 @@ GitHub Actions (cron 週一至五 21:30)
   report/models.py   ──► DailyReport dataclass（統一換算單位）
         │
         ├──► report/ai_summary.py ──► Claude API
+        ├──► report/chart.py      ──► matplotlib 近 5 日趨勢圖（PNG）
         ▼
   report/render.py   ──► Jinja2 HTML 郵件模板
         ▼
@@ -37,7 +39,8 @@ GitHub Actions (cron 週一至五 21:30)
 - **部分失敗不影響整體**：某個資料源抓取失敗時，報告仍會寄出，並在信末註記缺少哪些資料；AI 摘要失敗也只會省略該區塊。
 - **可測試性**：HTTP 與解析邏輯分開，`tests/` 使用真實回應樣本驗證單位換算、跨月前一交易日、未平倉增減等邊界情況。
 - **郵件相容性**：郵件軟體普遍不支援 `<style>`，因此模板全部使用 inline CSS；配色依台股慣例紅漲綠跌。
-- **網路穩定性**：requests 搭配指數退避重試，應付官方網站偶發的 5xx 錯誤。
+- **郵件內嵌圖表**：Gmail 等郵件軟體不支援 SVG 與 JavaScript，趨勢圖以 matplotlib 輸出 PNG，用 `cid:` 內嵌在信中。四張小圖各用獨立 y 軸、上下排列，方便手機閱讀；買賣超沿用紅買綠賣，並以零軸上下位置與正負號標籤作為第二重編碼，色覺辨識障礙者也能判讀。
+- **網路穩定性**：requests 搭配指數退避重試，應付官方網站偶發的 5xx 錯誤；對證交所的連續請求間隔 1.5 秒，避免觸發 IP 封鎖。
 
 ## 快速開始
 
@@ -86,6 +89,6 @@ python -m report --date 2026-09-24 --dry-run --no-ai   # 產生 output/report-20
 
 ## 可以再延伸的方向
 
-- 把每日數據存成 CSV／SQLite，加入近 5 日趨勢圖
+- 把每日數據存成 CSV／SQLite，拉長趨勢圖的期間
 - 加入外資期貨未平倉的歷史分位數，判斷目前部位是否極端
 - 支援 Telegram／Discord 推送

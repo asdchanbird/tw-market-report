@@ -53,8 +53,12 @@ FUTURES = [
 ]
 
 
+def _days(d=D, payloads=(MARKET,)):
+    return fetchers.parse_market_rows(list(payloads), d)
+
+
 def test_parse_market():
-    m = fetchers.parse_market(MARKET, D)
+    m = fetchers.parse_market(_days(), D)
     assert m.close == 48024.60
     assert m.change == -132.69
     assert m.change_pct == pytest.approx(-132.69 / 48157.29 * 100)
@@ -62,16 +66,23 @@ def test_parse_market():
     assert m.turnover_change_pct == pytest.approx(-13.31, abs=0.01)
 
 
-def test_parse_market_uses_previous_month_on_first_trading_day():
+def test_parse_market_rows_merges_months_in_date_order():
     prev = {"data": [["115/08/31", "0", "1,000,000,000", "0", "100", "0"]]}
     first = {"data": [["115/09/01", "0", "1,100,000,000", "0", "101", "1"]]}
-    m = fetchers.parse_market(first, date(2026, 9, 1), prev)
+    days = _days(date(2026, 9, 1), payloads=(first, prev))
+    assert [x.trade_date for x in days] == [date(2026, 8, 31), date(2026, 9, 1)]
+    m = fetchers.parse_market(days, date(2026, 9, 1))
     assert m.turnover_change_pct == pytest.approx(10.0)
+
+
+def test_parse_market_rows_drops_days_after_target():
+    days = _days(date(2026, 9, 23))
+    assert days[-1].trade_date == date(2026, 9, 23)
 
 
 def test_parse_market_holiday():
     with pytest.raises(fetchers.NoTradingData):
-        fetchers.parse_market(MARKET, date(2026, 9, 25))
+        fetchers.parse_market(_days(date(2026, 9, 25)), date(2026, 9, 25))
 
 
 def test_parse_institutional_merges_dealer_rows():
@@ -104,6 +115,10 @@ def test_parse_futures_computes_change_vs_previous_day():
 def test_parse_futures_first_row_has_no_change():
     pos = fetchers.parse_futures(FUTURES, date(2026, 9, 23))
     assert all(p.net_oi_change is None for p in pos)
+
+
+def test_parse_foreign_oi():
+    assert fetchers.parse_foreign_oi(FUTURES) == {date(2026, 9, 23): -76084, D: -77031}
 
 
 def test_parse_pcr():

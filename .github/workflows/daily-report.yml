@@ -27,6 +27,9 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: 安裝中文字型（趨勢圖用）
+        run: sudo apt-get update -q && sudo apt-get install -y -q fonts-noto-cjk
+
       - run: pip install -r requirements.txt
 
       - run: python -m pytest -q

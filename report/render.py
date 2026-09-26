@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -14,9 +15,10 @@ _env = Environment(
 )
 
 
-def render_html(report: DailyReport) -> str:
+def render_html(report: DailyReport, chart_src: Optional[str] = None) -> str:
+    """chart_src：趨勢圖網址。寄信時為 "cid:trend"（內嵌附件），本機預覽時為 PNG 檔名。"""
     return _env.get_template("report.html.j2").render(
-        r=report, weekday=WEEKDAYS[report.trade_date.weekday()]
+        r=report, weekday=WEEKDAYS[report.trade_date.weekday()], chart_src=chart_src
     )
 
 

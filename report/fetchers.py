@@ -5,6 +5,7 @@ parse_* 不碰網路，方便用固定的樣本資料做單元測試。
 """
 import csv
 import io
+import time
 from datetime import date, timedelta
 from typing import List, Optional
 
@@ -16,6 +17,7 @@ from .models import (
     FuturesPosition,
     InstitutionalFlow,
     MarginSummary,
+    MarketDay,
     MarketSummary,
     PutCallRatio,
 )
@@ -23,6 +25,7 @@ from .models import (
 TWSE = "https://www.twse.com.tw/rwd/zh"
 TAIFEX = "https://www.taifex.com.tw/cht/3"
 HUNDRED_MILLION = 100_000_000
+TWSE_DELAY = 1.5  # 證交所對短時間大量請求會暫時封鎖 IP，每次請求間隔一下
 
 
 class NoTradingData(Exception):
@@ -48,44 +51,49 @@ def _roc_date(d: date) -> str:
 
 # ---------- 大盤 ----------
 
-def parse_market(payload: dict, d: date, prev_payload: Optional[dict] = None) -> MarketSummary:
-    rows = payload.get("data") or []
-    key = _roc_date(d)
-    idx = next((i for i, r in enumerate(rows) if r[0] == key), None)
-    if idx is None:
+def _parse_roc(s: str) -> date:
+    y, m, d = (int(x) for x in s.split("/"))
+    return date(y + 1911, m, d)
+
+
+def parse_market_rows(payloads: List[dict], d: date) -> List[MarketDay]:
+    """把數個月份的 FMTQIK 回應合併成依日期排序、截至 d 的每日資料。"""
+    days = [
+        MarketDay(
+            trade_date=_parse_roc(r[0]),
+            close=_num(r[4]),
+            change=_num(r[5]),
+            turnover_billion=_num(r[2]) / HUNDRED_MILLION,
+        )
+        for p in payloads
+        for r in (p.get("data") or [])
+    ]
+    return sorted((x for x in days if x.trade_date <= d), key=lambda x: x.trade_date)
+
+
+def parse_market(days: List[MarketDay], d: date) -> MarketSummary:
+    if not days or days[-1].trade_date != d:
         raise NoTradingData(f"{d} 無大盤成交資料")
-
-    row = rows[idx]
-    close, change = _num(row[4]), _num(row[5])
-    turnover = _num(row[2])
-
-    prev_row = rows[idx - 1] if idx > 0 else ((prev_payload or {}).get("data") or [None])[-1]
-    turnover_change_pct = None
-    if prev_row:
-        prev_turnover = _num(prev_row[2])
-        turnover_change_pct = (turnover / prev_turnover - 1) * 100
-
+    today = days[-1]
+    prev = days[-2] if len(days) > 1 else None
     return MarketSummary(
-        close=close,
-        change=change,
-        change_pct=change / (close - change) * 100,
-        turnover_billion=turnover / HUNDRED_MILLION,
-        turnover_change_pct=turnover_change_pct,
+        close=today.close,
+        change=today.change,
+        change_pct=today.change / (today.close - today.change) * 100,
+        turnover_billion=today.turnover_billion,
+        turnover_change_pct=(today.turnover_billion / prev.turnover_billion - 1) * 100 if prev else None,
     )
 
 
-def fetch_market(s: requests.Session, d: date) -> MarketSummary:
+def fetch_market_days(s: requests.Session, d: date) -> List[MarketDay]:
+    """抓上個月與本月的大盤資料，確保月初也有足夠的前幾個交易日。"""
     url = f"{TWSE}/afterTrading/FMTQIK"
-    payload = s.get(url, params={"date": d.strftime("%Y%m%d"), "response": "json"}, timeout=20).json()
-    prev_payload = None
-    rows = payload.get("data") or []
-    if rows and rows[0][0] == _roc_date(d):
-        # 當月第一個交易日：前一交易日在上個月
-        last_month = d.replace(day=1) - timedelta(days=1)
-        prev_payload = s.get(
-            url, params={"date": last_month.strftime("%Y%m%d"), "response": "json"}, timeout=20
-        ).json()
-    return parse_market(payload, d, prev_payload)
+    last_month = d.replace(day=1) - timedelta(days=1)
+    payloads = []
+    for month in (last_month, d):
+        payloads.append(s.get(url, params={"date": month.strftime("%Y%m%d"), "response": "json"}, timeout=20).json())
+        time.sleep(TWSE_DELAY)
+    return parse_market_rows(payloads, d)
 
 
 # ---------- 三大法人現貨買賣超 ----------
@@ -177,9 +185,18 @@ def parse_futures(rows: List[dict], d: date) -> List[FuturesPosition]:
     return result
 
 
-def fetch_futures(s: requests.Session, d: date) -> List[FuturesPosition]:
-    rows = _taifex_csv(s, "futContractsDateDown", {**_date_range(d), "commodityId": "TXF"})
-    return parse_futures(rows, d)
+def parse_foreign_oi(rows: List[dict]) -> dict:
+    """外資台指期多空未平倉淨額，{日期: 口數}。"""
+    return {
+        date(*(int(x) for x in r["日期"].split("/"))): int(r["多空未平倉口數淨額"])
+        for r in rows
+        if r.get("身份別") == "外資及陸資"
+    }
+
+
+def fetch_futures_rows(s: requests.Session, d: date) -> List[dict]:
+    # 抓 30 天，遇到春節等長假也能涵蓋前 5 個交易日
+    return _taifex_csv(s, "futContractsDateDown", {**_date_range(d, days=30), "commodityId": "TXF"})
 
 
 def parse_pcr(rows: List[dict], d: date) -> PutCallRatio:
