@@ -4,29 +4,23 @@ import pytest
 
 from report import fetchers, news
 
-# 臺銀牌告 CSV（截短遠期欄位以外皆為真實格式）
-BOT_CSV = (
-    "資料日期,幣別,匯率,現金,即期,遠期10天,遠期30天,遠期60天,遠期90天,遠期120天,遠期150天,遠期180天,"
-    "匯率,現金,即期,遠期10天,遠期30天,遠期60天,遠期90天,遠期120天,遠期150天,遠期180天\n"
-    "20260924,USD,本行買入,31.38000,31.73000,0,0,0,0,0,0,0,本行賣出,32.05000,31.83000,0,0,0,0,0,0,0,\n"
-    "20260923,USD,本行買入,31.30000,31.65000,0,0,0,0,0,0,0,本行賣出,31.97000,31.75000,0,0,0,0,0,0,0,\n"
-)
+# 鉅亨網日 K 回應（真實數值，t = 當日 00:00 UTC）
+CNYES_FX = {"data": {"t": [1790208000, 1790121600], "c": [31.78, 31.716]}}
 
 
-def test_parse_usd_twd_uses_spot_mid_rate():
-    rates = fetchers.parse_usd_twd(BOT_CSV)
-    assert rates == {date(2026, 9, 24): 31.78, date(2026, 9, 23): 31.70}
+def test_parse_usd_twd():
+    assert fetchers.parse_usd_twd(CNYES_FX) == {date(2026, 9, 24): 31.78, date(2026, 9, 23): 31.716}
 
 
 def test_parse_fx_change_vs_previous_business_day():
-    fx = fetchers.parse_fx(fetchers.parse_usd_twd(BOT_CSV), date(2026, 9, 24))
+    fx = fetchers.parse_fx(fetchers.parse_usd_twd(CNYES_FX), date(2026, 9, 24))
     assert fx.usd_twd == 31.78
-    assert fx.change == pytest.approx(0.08)
+    assert fx.change == pytest.approx(0.064)  # 新聞：貶值 6.4 分
 
 
 def test_parse_fx_missing_day():
     with pytest.raises(fetchers.NoTradingData):
-        fetchers.parse_fx(fetchers.parse_usd_twd(BOT_CSV), date(2026, 9, 25))
+        fetchers.parse_fx(fetchers.parse_usd_twd(CNYES_FX), date(2026, 9, 25))
 
 
 def _item(title, t, category="台股新聞"):

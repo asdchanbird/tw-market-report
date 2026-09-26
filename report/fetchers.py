@@ -6,7 +6,7 @@ parse_* 不碰網路，方便用固定的樣本資料做單元測試。
 import csv
 import io
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import requests
@@ -25,7 +25,7 @@ from .models import (
 
 TWSE = "https://www.twse.com.tw/rwd/zh"
 TAIFEX = "https://www.taifex.com.tw/cht/3"
-BOT_USD = "https://rate.bot.com.tw/xrt/flcsv/0/L3M/USD"  # 臺灣銀行近 3 個月美元牌告
+CNYES_CHART = "https://ws.api.cnyes.com/ws/api/v1/charting/history"
 HUNDRED_MILLION = 100_000_000
 TWSE_DELAY = 1.5  # 證交所對短時間大量請求會暫時封鎖 IP，每次請求間隔一下
 
@@ -217,31 +217,33 @@ def fetch_pcr(s: requests.Session, d: date) -> PutCallRatio:
     return parse_pcr(rows, d)
 
 
-# ---------- 臺灣銀行：新台幣兌美元 ----------
+# ---------- 新台幣兌美元（台北外匯市場收盤，經鉅亨網） ----------
 
-def parse_usd_twd(text: str) -> Dict[date, float]:
-    """臺銀牌告 CSV -> {日期: 即期買入與即期賣出的中價}。
-
-    欄位：資料日期, 幣別, 本行買入, 現金, 即期, 遠期×7, 本行賣出, 現金, 即期, …
-    """
-    rates = {}
-    for row in csv.reader(io.StringIO(text)):
-        if len(row) < 15 or not row[0].isdigit():
-            continue
-        day = date(int(row[0][:4]), int(row[0][4:6]), int(row[0][6:8]))
-        rates[day] = round((float(row[4]) + float(row[14])) / 2, 3)
-    return rates
+def parse_usd_twd(payload: dict) -> Dict[date, float]:
+    """鉅亨網日 K 資料 -> {日期: 收盤價}。t 為當日 00:00 UTC 的 Unix 時間。"""
+    data = payload["data"]
+    taipei = timezone(timedelta(hours=8))
+    return {datetime.fromtimestamp(t, taipei).date(): c for t, c in zip(data["t"], data["c"])}
 
 
 def parse_fx(rates: Dict[date, float], d: date) -> FxRate:
     if d not in rates:
-        raise NoTradingData(f"{d} 無臺銀美元牌告")
+        raise NoTradingData(f"{d} 無新台幣收盤匯率")
     earlier = [x for x in rates if x < d]
     prev = rates[max(earlier)] if earlier else None
     return FxRate(usd_twd=rates[d], change=round(rates[d] - prev, 3) if prev is not None else None)
 
 
-def fetch_usd_twd(s: requests.Session) -> Dict[date, float]:
-    r = s.get(BOT_USD, timeout=20)
+def fetch_usd_twd(s: requests.Session, d: date) -> Dict[date, float]:
+    # 臺銀牌告網站會擋 GitHub Actions 的海外 IP，改用鉅亨網的報價 API
+    taipei = timezone(timedelta(hours=8))
+    end = datetime.combine(d + timedelta(days=1), datetime.min.time(), taipei)
+    r = s.get(
+        CNYES_CHART,
+        params={"symbol": "FX:USDTWD:FOREX", "resolution": "D", "quote": 1,
+                # 此 API 的 from 是較新的時間、to 是較舊的時間
+                "from": int(end.timestamp()), "to": int((end - timedelta(days=30)).timestamp())},
+        timeout=20,
+    )
     r.raise_for_status()
-    return parse_usd_twd(r.content.decode("utf-8-sig"))
+    return parse_usd_twd(r.json())

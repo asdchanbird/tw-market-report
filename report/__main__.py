@@ -62,7 +62,7 @@ def build_report(d: date) -> DailyReport:
         return fetchers.parse_futures(futures_rows, d)
 
     def fetch_fx(s, d):
-        usd_twd.update(fetchers.fetch_usd_twd(s))
+        usd_twd.update(fetchers.fetch_usd_twd(s, d))
         return fetchers.parse_fx(usd_twd, d)
 
     def fetch_recent_news(s, d):

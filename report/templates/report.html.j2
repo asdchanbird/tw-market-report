@@ -69,7 +69,7 @@
   <table style="width:100%;border-collapse:collapse">
     {% if r.fx %}
     {#- 匯率數字變大是台幣貶值；不用紅綠色，避免與股價漲跌的直覺混淆 -#}
-    <tr><td style="{{ td }}">新台幣兌美元<span style="color:#888;font-size:12px">（臺銀即期）</span></td><td style="{{ tdr }}">{{ "{:.3f}".format(r.fx.usd_twd) }}</td><td style="{{ tdr }};color:#555">
+    <tr><td style="{{ td }}">新台幣兌美元<span style="color:#888;font-size:12px">（台北外匯收盤）</span></td><td style="{{ tdr }}">{{ "{:.3f}".format(r.fx.usd_twd) }}</td><td style="{{ tdr }};color:#555">
       {%- if r.fx.change is none %}—{% elif r.fx.change > 0 %}台幣貶 {{ "{:.3f}".format(r.fx.change) }}{% elif r.fx.change < 0 %}台幣升 {{ "{:.3f}".format(-r.fx.change) }}{% else %}持平{% endif -%}
     </td></tr>
     {% endif %}
@@ -110,7 +110,7 @@
   {% endif %}
 
   <div style="margin-top:28px;font-size:12px;color:#999;line-height:1.6">
-    資料來源：臺灣證券交易所、臺灣期貨交易所、臺灣銀行牌告匯率、鉅亨網。本報告由程式自動產生，僅供參考。
+    資料來源：臺灣證券交易所、臺灣期貨交易所、鉅亨網。本報告由程式自動產生，僅供參考。
   </div>
 </div>
 </div>

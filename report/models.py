@@ -20,7 +20,7 @@ class TrendPoint:
     turnover_billion: float
     foreign_net_billion: Optional[float] = None  # 外資現貨買賣超（億元）
     foreign_oi: Optional[int] = None  # 外資台指期未平倉淨額（口）
-    usd_twd: Optional[float] = None  # 新台幣兌美元（臺銀即期買賣中價）
+    usd_twd: Optional[float] = None  # 新台幣兌美元（台北外匯收盤）
 
 
 @dataclass
